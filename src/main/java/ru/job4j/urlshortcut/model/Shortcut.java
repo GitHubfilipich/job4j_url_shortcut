@@ -26,7 +26,7 @@ public class Shortcut {
     private String url;
 
     @NotBlank(message = "Shortcut не может быть пустым")
-    @Schema(description = "Shortcut", example = "ZRUfdD2")
+    @Schema(description = "Shortcut", example = "ZRUfdD21")
     private String shortcut;
 
     @ManyToOne
@@ -35,4 +35,7 @@ public class Shortcut {
     @Schema(description = "Shortcut user",
             example = "{\"id\":2,\"login\":\"userLogin\",\"password\":\"pass123\",\"site\":\"example.com\"}")
     User user;
+
+    @Schema(description = "Total", example = "99")
+    Long total;
 }
