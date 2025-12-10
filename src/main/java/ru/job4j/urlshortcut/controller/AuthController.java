@@ -1,25 +1,34 @@
 package ru.job4j.urlshortcut.controller;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import lombok.AllArgsConstructor;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.web.bind.annotation.CrossOrigin;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 import ru.job4j.urlshortcut.dto.request.LoginRequestDTO;
 import ru.job4j.urlshortcut.dto.request.SignupRequestDTO;
 import ru.job4j.urlshortcut.dto.response.JwtResponseDTO;
 import ru.job4j.urlshortcut.dto.response.MessageResponseDTO;
 import ru.job4j.urlshortcut.dto.response.RegisterDTO;
+import ru.job4j.urlshortcut.exception.LoginGenerationException;
+import ru.job4j.urlshortcut.exception.SiteAlreadyRegisteredException;
 import ru.job4j.urlshortcut.jwt.JwtUtils;
 import ru.job4j.urlshortcut.service.user.UserService;
 import ru.job4j.urlshortcut.userdetails.UserDetailsImpl;
+
+import java.io.IOException;
+import java.time.LocalDateTime;
+import java.util.HashMap;
+import java.util.Map;
 
 @CrossOrigin(origins = "*", maxAge = 3600)
 @Tag(name = "AuthController", description = "AuthController management APIs")
@@ -49,5 +58,26 @@ public class AuthController {
         UserDetailsImpl userDetails = (UserDetailsImpl) authentication.getPrincipal();
         return ResponseEntity
                 .ok(new JwtResponseDTO(jwt, userDetails.getId(), userDetails.getUsername(), userDetails.getSite()));
+    }
+
+    @ExceptionHandler(value = { DataIntegrityViolationException.class, LoginGenerationException.class,
+            SiteAlreadyRegisteredException.class})
+    public void catchDataIntegrityViolationException(Exception e, HttpServletRequest request,
+                                                     HttpServletResponse response) throws IOException {
+
+        HttpStatus status = HttpStatus.BAD_REQUEST;
+
+        if (e instanceof LoginGenerationException) {
+            status = HttpStatus.INTERNAL_SERVER_ERROR;
+        }
+
+        Map<String, String> details = new HashMap<>();
+        details.put("message", e.getMessage());
+        details.put("type", String.valueOf(e.getClass()));
+        details.put("timestamp", String.valueOf(LocalDateTime.now()));
+        details.put("path", request.getRequestURI());
+        response.setStatus(status.value());
+        response.setContentType("application/json; charset=utf-8");
+        response.getWriter().write(new ObjectMapper().writeValueAsString(details));
     }
 }

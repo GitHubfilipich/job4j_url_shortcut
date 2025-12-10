@@ -1,19 +1,24 @@
 package ru.job4j.urlshortcut.service.shortcut;
 
+import org.hibernate.exception.ConstraintViolationException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
-import org.springframework.security.core.userdetails.UsernameNotFoundException;
+import org.springframework.dao.DataIntegrityViolationException;
+import ru.job4j.urlshortcut.exception.ShortcutGenerationException;
+import ru.job4j.urlshortcut.exception.UrlAlreadyRegisteredException;
 import ru.job4j.urlshortcut.model.Shortcut;
 import ru.job4j.urlshortcut.model.User;
 import ru.job4j.urlshortcut.repository.ShortcutRepository;
 import ru.job4j.urlshortcut.repository.UserRepository;
 
+import java.sql.SQLException;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
-import static org.assertj.core.api.Assertions.*;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.*;
 
 class SimpleShortcutServiceTest {
@@ -34,47 +39,19 @@ class SimpleShortcutServiceTest {
      */
     @Test
     void whenRegisterThenReturnShortcut() {
+        String url = "http://test.ru";
         User user = new User(1, "login", "pass", "site.com");
-        when(shortcutRepository.findByUrl("http://test.ru")).thenReturn(Optional.empty());
-        when(userRepository.findByLogin("login")).thenReturn(Optional.of(user));
-        when(shortcutRepository.save(any(Shortcut.class))).thenAnswer(inv -> inv.getArgument(0));
-
-        String result = service.register("login", "http://test.ru");
-        assertThat(result).isNotBlank().hasSize(8);
-
         ArgumentCaptor<Shortcut> captor = ArgumentCaptor.forClass(Shortcut.class);
-        verify(shortcutRepository).save(captor.capture());
+        when(shortcutRepository.save(captor.capture())).thenAnswer(inv -> inv.getArgument(0));
+
+        String result = service.register(user, url);
         Shortcut saved = captor.getValue();
-        assertThat(saved.getUrl()).isEqualTo("http://test.ru");
+
+        assertThat(result).isNotBlank().hasSize(8);
+        assertThat(saved.getUrl()).isEqualTo(url);
         assertThat(saved.getUser()).isEqualTo(user);
         assertThat(saved.getShortcut()).isEqualTo(result);
         assertThat(saved.getTotal()).isEqualTo(0L);
-    }
-
-    /**
-     * Проверяет сценарий, когда shortcut уже существует (findByUrl возвращает isPresent)
-     */
-    @Test
-    void whenRegisterWithExistingShortcutThenReturnExistingShortcut() {
-        Shortcut shortcut = new Shortcut(1, "http://test.ru", "abc12345", null, 0L);
-        when(shortcutRepository.findByUrl("http://test.ru")).thenReturn(Optional.of(shortcut));
-
-        String result = service.register("login", "http://test.ru");
-        assertThat(result).isEqualTo("abc12345");
-        verify(shortcutRepository, never()).save(any());
-    }
-
-    /**
-     * Проверяет успешный сценарий получения url и инкрементации счетчика методом {@code getUrlAndIncreaseCounter}
-     */
-    @Test
-    void whenGetUrlAndIncreaseCounterThenReturnUrl() {
-        Shortcut shortcut = new Shortcut(1, "http://test.ru", "abc12345", null, 5L);
-        when(shortcutRepository.findByShortcut("abc12345")).thenReturn(Optional.of(shortcut));
-
-        String url = service.getUrlAndIncreaseCounter("abc12345");
-        assertThat(url).isEqualTo("http://test.ru");
-        verify(shortcutRepository).incrementCounter(1);
     }
 
     /**
@@ -96,15 +73,74 @@ class SimpleShortcutServiceTest {
     }
 
     /**
-     * Проверяет сценарий, когда пользователь не найден при регистрации shortcut
+     * Проверяет неуспешный сценарий регистрации shortcut методом {@code register} из-за повторной регистрации URL
      */
     @Test
-    void whenRegisterWithUnknownLoginThenThrowException() {
-        when(shortcutRepository.findByUrl("http://test.ru")).thenReturn(Optional.empty());
-        when(userRepository.findByLogin("unknown")).thenReturn(Optional.empty());
+    void whenRegisterWithExistingUrlThenError() {
+        String url = "http://exists.ru";
+        User user = new User(1, "login", "pass", "site.com");
 
-        assertThatThrownBy(() -> service.register("unknown", "http://test.ru"))
-                .isInstanceOf(UsernameNotFoundException.class)
-                .hasMessageContaining("Site не найден");
+        String message = "uk_shortcut_url";
+        DataIntegrityViolationException exception = new DataIntegrityViolationException(message,
+                new ConstraintViolationException(message, new SQLException(message), message));
+        when(shortcutRepository.save(any(Shortcut.class))).thenThrow(exception);
+
+        assertThrows(UrlAlreadyRegisteredException.class, () -> service.register(user, url));
+    }
+
+    /**
+     * Проверяет неуспешный сценарий регистрации shortcut методом {@code register} из-за невозможности
+     * сгенерировать уникальный shortcut после нескольких попыток
+     */
+    @Test
+    void whenRegisterWithFailedToGenerateUniqueShortcutThenError() {
+        String url = "http://new.ru";
+        User user = new User(1, "login", "pass", "site.com");
+
+        String message = "uk_shortcut_shortcut";
+        DataIntegrityViolationException exception = new DataIntegrityViolationException(message,
+                new ConstraintViolationException(message, new SQLException(message), message));
+        when(shortcutRepository.save(any(Shortcut.class))).thenThrow(exception);
+
+        assertThrows(ShortcutGenerationException.class, () -> service.register(user, url));
+        verify(shortcutRepository, times(5)).save(any());
+    }
+
+    /**
+     * Проверяет успешный сценарий получения URL и инкремента счётчика методом {@code getUrlAndIncreaseCounter}
+     */
+    @Test
+    void whenGetUrlAndIncreaseCounterThenReturnUrl() {
+        String sc = "abcd1234";
+        User user = new User(1, "login", "pass", "site.com");
+        String url = "http://test.ru";
+        Shortcut shortcut = new Shortcut(1, url, sc, user, 5L);
+
+        ArgumentCaptor<String> captor = ArgumentCaptor.forClass(String.class);
+        when(shortcutRepository.findByShortcutAndIncrementCounter(captor.capture()))
+                .thenReturn(Optional.of(shortcut));
+
+        Optional<String> result = service.getUrlAndIncreaseCounter(sc);
+
+        assertThat(result).isPresent().contains(url);
+        assertThat(captor.getValue()).isEqualTo(sc);
+    }
+
+    /**
+     * Проверяет сценарий регистрации shortcut методом {@code register}, когда возникает
+     * DataIntegrityViolationException не связанная с uk_shortcut_shortcut или uk_shortcut_url — исключение должно быть
+     * проброшено
+     */
+    @Test
+    void whenRegisterWithUnknownDbErrorThenThrow() {
+        String url = "http://unknown.ru";
+        User user = new User(1, "login", "pass", "site.com");
+
+        DataIntegrityViolationException unknownEx = new DataIntegrityViolationException("unknown db error");
+        when(shortcutRepository.save(any(Shortcut.class))).thenThrow(unknownEx);
+
+        DataIntegrityViolationException thrown = assertThrows(DataIntegrityViolationException.class,
+                () -> service.register(user, url));
+        assertThat(thrown).isSameAs(unknownEx);
     }
 }

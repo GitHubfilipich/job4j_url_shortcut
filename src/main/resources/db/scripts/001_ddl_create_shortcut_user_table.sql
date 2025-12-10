@@ -1,6 +1,6 @@
 CREATE TABLE shortcut_user (
-    id       SERIAL PRIMARY KEY,
-    login    TEXT   NOT NULL,
+    id       INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    login    TEXT   CONSTRAINT uk_user_login UNIQUE,
     password TEXT   NOT NULL,
-    site     TEXT   UNIQUE NOT NULL
+    site     TEXT   CONSTRAINT uk_user_site UNIQUE
 );

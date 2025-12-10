@@ -7,10 +7,19 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
+import ru.job4j.urlshortcut.exception.ShortcutGenerationException;
+import ru.job4j.urlshortcut.model.User;
 import ru.job4j.urlshortcut.service.shortcut.ShortcutService;
+import ru.job4j.urlshortcut.userdetails.UserDetailsImpl;
 
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+import org.springframework.dao.DataIntegrityViolationException;
+import java.io.PrintWriter;
+import java.io.StringWriter;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.Mockito.*;
@@ -31,19 +40,20 @@ class ShortcutControllerTest {
      */
     @Test
     void whenConvertUrlThenReturnCode() {
-        Authentication authentication = mock(Authentication.class);
-        when(authentication.getName()).thenReturn("login");
+        User user = new User(1, "login", "pass", "site.com");
+        UserDetailsImpl userDetails = mock(UserDetailsImpl.class);
+        when(userDetails.getUser()).thenReturn(user);
         Map<String, String> request = Map.of("url", "http://test.ru");
 
-        ArgumentCaptor<String> loginCaptor = ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<User> userCaptor = ArgumentCaptor.forClass(User.class);
         ArgumentCaptor<String> urlCaptor = ArgumentCaptor.forClass(String.class);
-        when(shortcutService.register(loginCaptor.capture(), urlCaptor.capture())).thenReturn("code123");
+        when(shortcutService.register(userCaptor.capture(), urlCaptor.capture())).thenReturn("code123");
 
-        ResponseEntity<Map<String, String>> response = controller.convertUrl(request, authentication);
+        ResponseEntity<Map<String, String>> response = controller.convertUrl(request, userDetails);
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(response.getBody()).containsEntry("code", "code123");
-        assertThat(loginCaptor.getValue()).isEqualTo("login");
+        assertThat(userCaptor.getValue()).isEqualTo(user);
         assertThat(urlCaptor.getValue()).isEqualTo("http://test.ru");
     }
 
@@ -52,14 +62,17 @@ class ShortcutControllerTest {
      */
     @Test
     void whenRedirectThenReturnFoundWithLocation() {
+        String url = "http://target.ru";
+        String shortcut = "shortcut";
         ArgumentCaptor<String> shortcutCaptor = ArgumentCaptor.forClass(String.class);
-        when(shortcutService.getUrlAndIncreaseCounter(shortcutCaptor.capture())).thenReturn("http://target.ru");
+        when(shortcutService.getUrlAndIncreaseCounter(shortcutCaptor.capture()))
+                .thenReturn(Optional.of(url));
 
-        ResponseEntity<Void> response = controller.redirect("abc123");
+        ResponseEntity<Void> response = controller.redirect(shortcut);
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.FOUND);
-        assertThat(response.getHeaders().getFirst(HttpHeaders.LOCATION)).isEqualTo("http://target.ru");
-        assertThat(shortcutCaptor.getValue()).isEqualTo("abc123");
+        assertThat(response.getHeaders().getFirst(HttpHeaders.LOCATION)).isEqualTo(url);
+        assertThat(shortcutCaptor.getValue()).isEqualTo(shortcut);
     }
 
     /**
@@ -68,7 +81,7 @@ class ShortcutControllerTest {
     @Test
     void whenRedirectNotFoundThenReturnNotFound() {
         ArgumentCaptor<String> shortcutCaptor = ArgumentCaptor.forClass(String.class);
-        when(shortcutService.getUrlAndIncreaseCounter(shortcutCaptor.capture())).thenReturn(null);
+        when(shortcutService.getUrlAndIncreaseCounter(shortcutCaptor.capture())).thenReturn(Optional.empty());
 
         ResponseEntity<Void> response = controller.redirect("notfound");
 
@@ -95,5 +108,55 @@ class ShortcutControllerTest {
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(response.getBody()).isEqualTo(stats);
         assertThat(loginCaptor.getValue()).isEqualTo("login");
+    }
+
+    /**
+     * Проверяет обработчик исключений {@code catchDataIntegrityViolationException} в ShortcutController
+     */
+    @Test
+    void whenCatchDataIntegrityViolationExceptionThenWriteDetails() throws Exception {
+        DataIntegrityViolationException ex = new DataIntegrityViolationException("db violation");
+        HttpServletRequest request = mock(HttpServletRequest.class);
+        HttpServletResponse response = mock(HttpServletResponse.class);
+        when(request.getRequestURI()).thenReturn("/convert");
+
+        StringWriter sw = new StringWriter();
+        PrintWriter pw = new PrintWriter(sw);
+        when(response.getWriter()).thenReturn(pw);
+
+        controller.catchDataIntegrityViolationException(ex, request, response);
+
+        verify(response).setStatus(org.springframework.http.HttpStatus.BAD_REQUEST.value());
+        verify(response).setContentType("application/json; charset=utf-8");
+        pw.flush();
+        String body = sw.toString();
+        assertThat(body).contains("\"message\":\"db violation\"");
+        assertThat(body).contains("\"type\"");
+        assertThat(body).contains("\"path\":\"/convert\"");
+    }
+
+    /**
+     * Проверяет обработчик исключений {@code catchDataIntegrityViolationException} в ShortcutController
+     */
+    @Test
+    void whenCatchShortcutGenerationExceptionThenWriteDetails() throws Exception {
+        ShortcutGenerationException ex = new ShortcutGenerationException();
+        HttpServletRequest request = mock(HttpServletRequest.class);
+        HttpServletResponse response = mock(HttpServletResponse.class);
+        when(request.getRequestURI()).thenReturn("/convert");
+
+        StringWriter sw = new StringWriter();
+        PrintWriter pw = new PrintWriter(sw);
+        when(response.getWriter()).thenReturn(pw);
+
+        controller.catchDataIntegrityViolationException(ex, request, response);
+
+        verify(response).setStatus(HttpStatus.INTERNAL_SERVER_ERROR.value());
+        verify(response).setContentType("application/json; charset=utf-8");
+        pw.flush();
+        String body = sw.toString();
+        assertThat(body).contains("\"message\":\"Failed to generate unique shortcut\"");
+        assertThat(body).contains("\"type\"");
+        assertThat(body).contains("\"path\":\"/convert\"");
     }
 }

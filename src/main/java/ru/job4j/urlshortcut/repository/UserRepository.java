@@ -6,7 +6,5 @@ import ru.job4j.urlshortcut.model.User;
 import java.util.Optional;
 
 public interface UserRepository extends JpaRepository<User, Integer> {
-    Optional<User> findBySite(String name);
-
     Optional<User> findByLogin(String login);
 }

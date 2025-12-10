@@ -27,17 +27,4 @@ class UserRepositoryTest {
         assertThat(found).isPresent();
         assertThat(found.get()).usingRecursiveComparison().isEqualTo(user2);
     }
-
-    /**
-     * Проверяет успешный сценарий поиска пользователя по сайту методом {@code findBySite}
-     */
-    @Test
-    void whenFindBySiteThenReturnUser() {
-        User user1 = userRepository.save(new User(null, "login1", "pass1", "site1.com"));
-        User user2 = userRepository.save(new User(null, "login2", "pass2", "site2.com"));
-        User user3 = userRepository.save(new User(null, "login3", "pass3", "site3.com"));
-        Optional<User> found = userRepository.findBySite("site3.com");
-        assertThat(found).isPresent();
-        assertThat(found.get()).usingRecursiveComparison().isEqualTo(user3);
-    }
 }

@@ -7,9 +7,8 @@ import jakarta.validation.constraints.NotNull;
 import lombok.*;
 import ru.job4j.urlshortcut.model.validation.ValidOperation;
 
-import java.util.Set;
-
-@Data
+@Getter
+@Setter
 @Entity
 @AllArgsConstructor
 @NoArgsConstructor

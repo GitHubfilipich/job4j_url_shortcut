@@ -1,9 +1,12 @@
 package ru.job4j.urlshortcut.service.shortcut;
 
 import lombok.AllArgsConstructor;
-import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.stereotype.Service;
+import ru.job4j.urlshortcut.exception.ShortcutGenerationException;
+import ru.job4j.urlshortcut.exception.UrlAlreadyRegisteredException;
+import ru.job4j.urlshortcut.exception.Utils;
 import ru.job4j.urlshortcut.model.Shortcut;
 import ru.job4j.urlshortcut.model.User;
 import ru.job4j.urlshortcut.repository.ShortcutRepository;
@@ -17,35 +20,44 @@ import java.util.UUID;
 @AllArgsConstructor
 @Service
 public class SimpleShortcutService implements ShortcutService {
-    @Autowired
-    private UserRepository userRepository;
+    private final UserRepository userRepository;
 
-    @Autowired
-    private ShortcutRepository shortcutRepository;
+    private final ShortcutRepository shortcutRepository;
 
     @Override
-    public String register(String login, String url) {
-        Optional<Shortcut> shortcut = shortcutRepository.findByUrl(url);
-        if (shortcut.isPresent()) {
-            return shortcut.get().getShortcut();
+    public String register(User user, String url) {
+        int attempts = 0;
+        int maxAttempts = 5;
+
+        while (attempts < maxAttempts) {
+            attempts++;
+
+            String shortUrl = UUID.randomUUID().toString().replace("-", "").substring(0, 8);
+            Shortcut newShortcut = new Shortcut(null, url, shortUrl, user, 0L);
+
+            try {
+                shortcutRepository.save(newShortcut);
+                return shortUrl;
+            } catch (DataIntegrityViolationException e) {
+                if (Utils.containsConstraintName(e, "uk_shortcut_shortcut")) {
+                    continue;
+                }
+
+                if (Utils.containsConstraintName(e, "uk_shortcut_url")) {
+                    throw new UrlAlreadyRegisteredException();
+                }
+
+                throw e;
+            }
         }
 
-        User user = userRepository.findByLogin(login)
-                .orElseThrow(() -> new UsernameNotFoundException("Site не найден"));
-        String shortUrl = UUID.randomUUID().toString().replace("-", "").substring(0, 8);
-        Shortcut newShortcut = new Shortcut(null, url, shortUrl, user, 0L);
-        shortcutRepository.save(newShortcut);
-        return shortUrl;
+        throw new ShortcutGenerationException();
     }
 
     @Override
-    public String getUrlAndIncreaseCounter(String shortcut) {
-        Optional<Shortcut> optionalShortcut = shortcutRepository.findByShortcut(shortcut);
-        if (optionalShortcut.isEmpty()) {
-            return null;
-        }
-        shortcutRepository.incrementCounter(optionalShortcut.get().getId());
-        return optionalShortcut.get().getUrl();
+    public Optional<String> getUrlAndIncreaseCounter(String shortcut) {
+        return shortcutRepository.findByShortcutAndIncrementCounter(shortcut)
+                .map(Shortcut::getUrl);
     }
 
     @Override

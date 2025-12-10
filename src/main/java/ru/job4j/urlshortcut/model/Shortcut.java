@@ -7,7 +7,8 @@ import jakarta.validation.constraints.NotNull;
 import lombok.*;
 import ru.job4j.urlshortcut.model.validation.ValidOperation;
 
-@Data
+@Getter
+@Setter
 @Entity
 @AllArgsConstructor
 @NoArgsConstructor
@@ -34,8 +35,8 @@ public class Shortcut {
     @NotNull(message = "Пользователь shortcut не может быть null")
     @Schema(description = "Shortcut user",
             example = "{\"id\":2,\"login\":\"userLogin\",\"password\":\"pass123\",\"site\":\"example.com\"}")
-    User user;
+    private User user;
 
     @Schema(description = "Total", example = "99")
-    Long total;
+    private long total;
 }

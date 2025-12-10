@@ -2,14 +2,11 @@ package ru.job4j.urlshortcut.userdetails;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import org.springframework.security.core.GrantedAuthority;
-import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetails;
 import ru.job4j.urlshortcut.model.User;
 
 import java.util.Collection;
-import java.util.List;
 import java.util.Objects;
-import java.util.stream.Collectors;
 
 public class UserDetailsImpl implements UserDetails {
     private static final long serialVersionUID = 1L;
@@ -18,19 +15,23 @@ public class UserDetailsImpl implements UserDetails {
     @JsonIgnore
     private String password;
     private String site;
+    @JsonIgnore
+    private final User user;
 
-    public UserDetailsImpl(Long id, String login, String password, String site) {
+    public UserDetailsImpl(Long id, String login, String password, String site, User user) {
         this.id = id;
         this.login = login;
         this.password = password;
         this.site = site;
+        this.user = user;
     }
 
     public static UserDetailsImpl build(User user) {
         return new UserDetailsImpl((long) user.getId(),
                 user.getLogin(),
                 user.getPassword(),
-                user.getSite());
+                user.getSite(),
+                user);
     }
 
     @Override
@@ -40,6 +41,10 @@ public class UserDetailsImpl implements UserDetails {
 
     public Long getId() {
         return id;
+    }
+
+    public User getUser() {
+        return user;
     }
 
     public String getSite() {
@@ -78,7 +83,7 @@ public class UserDetailsImpl implements UserDetails {
 
     @Override
     public int hashCode() {
-        return Objects.hash(getId(), getUsername(), getSite(), getPassword(), getAuthorities());
+        return Objects.hash(getId());
     }
 
     @Override
